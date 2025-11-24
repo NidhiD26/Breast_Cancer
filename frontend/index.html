@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Breast Cancer Prediction Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard">
+        <header>
+            <h1>Breast Cancer Prediction Dashboard</h1>
+        </header>
+
+        <main class="main-content">
+            <section class="card" id="prediction-card">
+                <h2>Make a Prediction</h2>
+                <div class="sample-loader">
+                    <select id="sampleSelector"></select>
+                    <button id="loadSampleBtn">Load Sample</button>
+                </div>
+                <form id="predictionForm">
+                    <div class="form-group">
+                        <label for="mean_radius">Mean Radius:</label>
+                        <input type="number" id="mean_radius" step="any" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mean_texture">Mean Texture:</label>
+                        <input type="number" id="mean_texture" step="any" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mean_perimeter">Mean Perimeter:</label>
+                        <input type="number" id="mean_perimeter" step="any" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mean_area">Mean Area:</label>
+                        <input type="number" id="mean_area" step="any" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mean_smoothness">Mean Smoothness:</label>
+                        <input type="number" id="mean_smoothness" step="any" required>
+                    </div>
+                    <button type="submit">Predict</button>
+                </form>
+                <div id="result" class="result-container">
+                    <!-- Prediction results will be displayed here -->
+                </div>
+            </section>
+
+            <section class="card" id="ann-visualization-card">
+                <h2>ANN Activation</h2>
+                <canvas id="annCanvas"></canvas>
+                <div class="legend">
+                    <p>The color of the hidden layer neurons changes with each prediction. A brighter color indicates a higher "activation", meaning that neuron is more influential in the final decision.</p>
+                </div>
+            </section>
+
+            <section class="card" id="evaluation-card">
+                <h2>Model Performance</h2>
+                <h3>Confusion Matrix</h3>
+                <table id="confusionMatrix">
+                    <!-- CM will be populated by script.js -->
+                </table>
+                <h3>Classification Report</h3>
+                <table id="classificationReport">
+                    <!-- Report will be populated by script.js -->
+                </table>
+            </section>
+
+            <section class="card" id="dataset-info-card">
+                <h2>Dataset Information</h2>
+                <div id="datasetInfo">
+                    <!-- Info will be populated by script.js -->
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
