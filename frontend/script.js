@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     fetchAnalysisData();
     fetchSampleData();
     setupPredictionForm();
@@ -6,13 +6,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
 let samples = [];
 let modelStructure = [];
+let currentSampleActualLabel = null;
 
 async function fetchAnalysisData() {
     try {
         const response = await fetch('http://127.0.0.1:8000/analysis');
         if (!response.ok) throw new Error('Failed to fetch analysis data.');
         const data = await response.json();
-        
+
         modelStructure = data.model_structure;
         renderAnnStructure(modelStructure); // Initial render
         renderEvaluationMetrics(data.confusion_matrix, data.classification_report);
@@ -28,9 +29,9 @@ async function fetchSampleData() {
         const response = await fetch('http://127.0.0.1:8000/samples?num_samples=10');
         if (!response.ok) throw new Error('Failed to fetch sample data.');
         samples = await response.json();
-        
+
         const selector = document.getElementById('sampleSelector');
-        selector.innerHTML = samples.map((sample, index) => 
+        selector.innerHTML = samples.map((sample, index) =>
             `<option value="${index}">Sample ${index + 1} (Actual: ${sample.actual_label})</option>`
         ).join('');
 
@@ -44,7 +45,10 @@ function loadSample() {
     const selectedIndex = selector.value;
     if (selectedIndex < 0 || selectedIndex >= samples.length) return;
 
-    const sampleFeatures = samples[selectedIndex].features;
+    const sample = samples[selectedIndex];
+    const sampleFeatures = sample.features;
+    currentSampleActualLabel = sample.actual_label; // Store the actual label
+
     for (const key in sampleFeatures) {
         const input = document.getElementById(key);
         if (input) {
@@ -78,15 +82,20 @@ function renderAnnStructure(structure, activations = []) {
         for (let i = 0; i < numNeurons; i++) {
             const y = startY + i * neuronGap;
             layerYCoords.push({ x, y });
-            
+
             ctx.beginPath();
             ctx.arc(x, y, neuronRadius, 0, 2 * Math.PI);
 
-            let color = '#007bff'; // Default color
+            let color = '#FFC0CB'; // Default color (Light Pink)
             if (layerIndex === 1 && activations.length > 0) { // Hidden layer
                 const activation = activations[i] / (maxActivation + 1e-5); // Normalize
-                const blue = 150 + Math.floor(105 * activation);
-                color = `rgb(0, 123, ${blue})`;
+                // Dark Pink scale: rgb(255, 20, 147) is DeepPink.
+                // We want a gradient from light pink to dark pink/reddish.
+                // Let's use a solid DarkPink for high activation.
+                const redness = 255;
+                const greenness = 192 - Math.floor(172 * activation); // 192 -> 20
+                const blueness = 203 - Math.floor(56 * activation);   // 203 -> 147
+                color = `rgb(${redness}, ${greenness}, ${blueness})`;
             }
             ctx.fillStyle = color;
             ctx.fill();
@@ -150,7 +159,7 @@ function renderDatasetInfo(info) {
 function setupPredictionForm() {
     document.getElementById('loadSampleBtn').addEventListener('click', loadSample);
 
-    document.getElementById('predictionForm').addEventListener('submit', async function(event) {
+    document.getElementById('predictionForm').addEventListener('submit', async function (event) {
         event.preventDefault();
 
         const data = {
@@ -158,7 +167,8 @@ function setupPredictionForm() {
             mean_texture: parseFloat(document.getElementById('mean_texture').value),
             mean_perimeter: parseFloat(document.getElementById('mean_perimeter').value),
             mean_area: parseFloat(document.getElementById('mean_area').value),
-            mean_smoothness: parseFloat(document.getElementById('mean_smoothness').value)
+            mean_smoothness: parseFloat(document.getElementById('mean_smoothness').value),
+            actual_label: currentSampleActualLabel
         };
 
         const resultDiv = document.getElementById('result');
@@ -177,16 +187,56 @@ function setupPredictionForm() {
             }
 
             const result = await response.json();
-            
-            // Update ANN visualization with activations
+
             renderAnnStructure(modelStructure, result.hidden_layer_activations);
+            highlightConfusionMatrix(result.prediction_quality);
 
             resultDiv.innerHTML = `
                 <p><strong>Prediction:</strong> ${result.prediction_label}</p>
+                <p><strong>Quality:</strong> ${result.prediction_quality || 'N/A'}</p>
                 <p><strong>Probability (Benign):</strong> ${(result.prediction_probabilities.Benign * 100).toFixed(2)}%</p>
                 <p><strong>Probability (Malignant):</strong> ${(result.prediction_probabilities.Malignant * 100).toFixed(2)}%</p>`;
+
         } catch (error) {
             resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+        } finally {
+            currentSampleActualLabel = null; // Reset after prediction
         }
     });
+}
+
+function highlightConfusionMatrix(quality) {
+    const cmTable = document.getElementById('confusionMatrix');
+    const cells = cmTable.getElementsByTagName('td');
+    for (const cell of cells) {
+        cell.classList.remove('highlight-tp', 'highlight-tn', 'highlight-fp', 'highlight-fn');
+    }
+
+    if (!quality) return;
+
+    let cellIndex;
+    let className;
+
+    switch (quality) {
+        case 'True Negative': // Actual Benign, Predicted Benign
+            cellIndex = 0;
+            className = 'highlight-tn';
+            break;
+        case 'False Positive': // Actual Benign, Predicted Malignant
+            cellIndex = 1;
+            className = 'highlight-fp';
+            break;
+        case 'False Negative': // Actual Malignant, Predicted Benign
+            cellIndex = 2;
+            className = 'highlight-fn';
+            break;
+        case 'True Positive': // Actual Malignant, Predicted Malignant
+            cellIndex = 3;
+            className = 'highlight-tp';
+            break;
+        default:
+            return;
+    }
+
+    cells[cellIndex].classList.add(className);
 }
