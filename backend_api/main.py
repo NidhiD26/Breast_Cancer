@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global mlp_model, scaler, evaluation_metrics, test_samples
+    global mlp_model, scaler, evaluation_metrics, test_samples, accumulated_y_true, accumulated_y_pred
     try:
         data = pd.read_csv('Breast_cancer_data.csv')
         input_data = data[feature_names]
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
         X_train_scaled = scaler.fit_transform(X_train)
         X_test_scaled = scaler.transform(X_test)
 
-        mlp_model = MLPClassifier(hidden_layer_sizes=(7,), activation="relu", max_iter=2000, random_state=42)
+        mlp_model = MLPClassifier(hidden_layer_sizes=(7,), activation="relu", max_iter=2000, random_state=42, alpha=1.0)
         mlp_model.fit(X_train_scaled, y_train)
 
         predictions = mlp_model.predict(X_test_scaled)
@@ -46,10 +46,16 @@ async def lifespan(app: FastAPI):
                 "training_samples": len(X_train),
                 "testing_samples": len(X_test),
                 "feature_names": feature_names,
-                "class_distribution": target.value_counts().to_dict()
+                "class_distribution": {str(k): v for k, v in target.value_counts().to_dict().items()}
             },
             "model_structure": get_model_structure(mlp_model)
         }
+
+        # Initialize cumulative lists with the test set predictions for ongoing evaluation
+        accumulated_y_true = y_test.tolist()
+        accumulated_y_pred = predictions.tolist()
+        
+        print(f"Initialized session tracking with {len(accumulated_y_true)} samples.")
         print("Model and scaler trained and loaded successfully!")
 
     except Exception as e:
@@ -75,6 +81,8 @@ mlp_model: MLPClassifier = None
 scaler: StandardScaler = None
 evaluation_metrics = {}
 test_samples = {}
+accumulated_y_true = []
+accumulated_y_pred = []
 feature_names = ['mean_radius', 'mean_texture', 'mean_perimeter', 'mean_area', 'mean_smoothness']
 
 from typing import Optional
@@ -177,6 +185,7 @@ async def predict(input_data: PredictionInput):
         result = "Benign" if prediction == 0 else "Malignant"
 
         prediction_quality = None
+        updated_metrics_response = None
         if actual_label_str:
             actual_label_val = 1 if actual_label_str == "Malignant" else 0
             if prediction == 1 and actual_label_val == 1:
@@ -188,6 +197,29 @@ async def predict(input_data: PredictionInput):
             elif prediction == 0 and actual_label_val == 1:
                 prediction_quality = "False Negative"
 
+            # --- Update Cumulative Metrics ---
+            global accumulated_y_true, accumulated_y_pred, evaluation_metrics
+            
+            accumulated_y_true.append(actual_label_val)
+            accumulated_y_pred.append(int(prediction))
+            
+            # Recalculate metrics
+            # Recalculate metrics with fixed labels to handle sparse session data
+            new_cm = confusion_matrix(accumulated_y_true, accumulated_y_pred, labels=[0, 1])
+            new_cr = classification_report(accumulated_y_true, accumulated_y_pred, output_dict=True, labels=[0, 1], zero_division=0)
+            
+            # Update global metrics
+            evaluation_metrics["confusion_matrix"] = new_cm.tolist()
+            evaluation_metrics["classification_report"] = new_cr
+            evaluation_metrics["dataset_info"]["total_samples"] += 1 # Optional: update total samples count
+            if actual_label_str == "Benign":
+                 evaluation_metrics["dataset_info"]["class_distribution"]['0'] += 1
+            else:
+                 evaluation_metrics["dataset_info"]["class_distribution"]['1'] += 1
+
+            print("Metrics updated with new prediction.")
+            updated_metrics_response = evaluation_metrics
+
         return {
             "prediction": int(prediction),
             "prediction_label": result,
@@ -197,7 +229,9 @@ async def predict(input_data: PredictionInput):
             },
             "features_used": features_dict,
             "hidden_layer_activations": hidden_layer_activations,
-            "prediction_quality": prediction_quality
+            "prediction_quality": prediction_quality,
+            "updated_metrics": updated_metrics_response
         }
     except Exception as e:
+        print(f"Prediction Error: {e}") # Log the error
         raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")

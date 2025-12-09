@@ -47,7 +47,12 @@ function loadSample() {
 
     const sample = samples[selectedIndex];
     const sampleFeatures = sample.features;
-    currentSampleActualLabel = sample.actual_label; // Store the actual label
+
+    // Set the actual label hidden input
+    const labelInput = document.getElementById('actual_label_hidden');
+    if (labelInput) {
+        labelInput.value = sample.actual_label;
+    }
 
     for (const key in sampleFeatures) {
         const input = document.getElementById(key);
@@ -86,16 +91,23 @@ function renderAnnStructure(structure, activations = []) {
             ctx.beginPath();
             ctx.arc(x, y, neuronRadius, 0, 2 * Math.PI);
 
-            let color = '#FFC0CB'; // Default color (Light Pink)
+            let color = '#F8BBD0'; // Default color (Light Pink from style.css)
             if (layerIndex === 1 && activations.length > 0) { // Hidden layer
                 const activation = activations[i] / (maxActivation + 1e-5); // Normalize
-                // Dark Pink scale: rgb(255, 20, 147) is DeepPink.
-                // We want a gradient from light pink to dark pink/reddish.
-                // Let's use a solid DarkPink for high activation.
-                const redness = 255;
-                const greenness = 192 - Math.floor(172 * activation); // 192 -> 20
-                const blueness = 203 - Math.floor(56 * activation);   // 203 -> 147
-                color = `rgb(${redness}, ${greenness}, ${blueness})`;
+
+                const startR = 248; // from #F8BBD0 (Light Pink - Low Activation)
+                const startG = 187; // from #F8BBD0
+                const startB = 208; // from #F8BBD0
+
+                const endR = 194; // from #C2185B (Dark Pink - High Activation)
+                const endG = 24;  // from #C2185B
+                const endB = 91;  // from #C2185B
+
+                const r = startR + Math.floor((endR - startR) * activation);
+                const g = startG + Math.floor((endG - startG) * activation);
+                const b = startB + Math.floor((endB - startB) * activation);
+
+                color = `rgb(${r}, ${g}, ${b})`;
             }
             ctx.fillStyle = color;
             ctx.fill();
@@ -143,6 +155,10 @@ function renderEvaluationMetrics(confusionMatrix, classReport) {
                 <td>${classReport['1']['f1-score'].toFixed(2)}</td>
                 <td>${classReport['1'].support}</td>
             </tr>
+            <tr>
+                <td><strong>Accuracy</strong></td>
+                <td colspan="4">${(classReport.accuracy * 100).toFixed(2)}%</td>
+            </tr>
         </tbody>`;
 }
 
@@ -168,7 +184,7 @@ function setupPredictionForm() {
             mean_perimeter: parseFloat(document.getElementById('mean_perimeter').value),
             mean_area: parseFloat(document.getElementById('mean_area').value),
             mean_smoothness: parseFloat(document.getElementById('mean_smoothness').value),
-            actual_label: currentSampleActualLabel
+            actual_label: document.getElementById('actual_label_hidden').value || null
         };
 
         const resultDiv = document.getElementById('result');
@@ -189,7 +205,12 @@ function setupPredictionForm() {
             const result = await response.json();
 
             renderAnnStructure(modelStructure, result.hidden_layer_activations);
-            highlightConfusionMatrix(result.prediction_quality);
+            // highlightConfusionMatrix(result.prediction_quality);
+
+            if (result.updated_metrics) {
+                renderEvaluationMetrics(result.updated_metrics.confusion_matrix, result.updated_metrics.classification_report);
+                renderDatasetInfo(result.updated_metrics.dataset_info);
+            }
 
             resultDiv.innerHTML = `
                 <p><strong>Prediction:</strong> ${result.prediction_label}</p>
@@ -200,7 +221,7 @@ function setupPredictionForm() {
         } catch (error) {
             resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
         } finally {
-            currentSampleActualLabel = null; // Reset after prediction
+            // No need to reset, user sees the dropdown state
         }
     });
 }
